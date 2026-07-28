@@ -1,0 +1,23 @@
+{
+  "name": "dark-chat",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "express": "^4.18.2",
+    "mongoose": "^9.8.1",
+    "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "electron": "^28.2.0",
+    "electron-builder": "^24.13.3"
+  }
+}
