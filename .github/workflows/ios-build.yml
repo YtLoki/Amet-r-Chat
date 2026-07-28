@@ -22,8 +22,13 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync ios
 
-      - name: Build iOS App for Simulator/Testing
+      - name: Build iOS App for Testing
         run: |
           cd ios/App
           xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -destination "generic/platform=iOS" CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO archive -archivePath App.xcarchive
-          xcodebuild -exportArchive -archivePath App.xcarchive -exportOptionsPlist ExportOptions.plist -exportPath build || true
+
+      - name: Upload iOS Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-archive
+          path: ios/App/App.xcarchive
