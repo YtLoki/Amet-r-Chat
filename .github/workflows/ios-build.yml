@@ -2,7 +2,7 @@ name: Build iOS App
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
 
 jobs:
   build-ios:
@@ -14,17 +14,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
 
       - name: Install Dependencies
-        run: |
-          npm install
-          npx cap update ios || true
+        run: npm install --legacy-peer-deps
 
-      - name: Build Web Assets
-        run: npm run build --if-present
+      - name: Sync Capacitor
+        run: npx cap sync ios
 
       - name: Build iOS App
         run: |
           cd ios/App
-          xcodebuild -workspace App.xcworkspace -scheme App -sdk iphoneos -configuration Release archive -archivePath $PWD/build/App.xcarchive CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -destination "generic/platform=iOS" CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
