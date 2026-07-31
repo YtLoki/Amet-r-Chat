@@ -10,7 +10,13 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Statik dosyaları ve ana sayfadaki public_index.html'i sunma
+app.use(express.static(__dirname));
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public_index.html'));
+});
 
 // MongoDB Bağlantısı
 const MONGO_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/darkchat";
