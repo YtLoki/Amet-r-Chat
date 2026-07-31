@@ -276,6 +276,7 @@
         }
 
         async function loadUserData() {
+            if (!currentUserFullTag) return;
             const res = await fetch('/api/get-user-data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

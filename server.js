@@ -51,7 +51,8 @@ app.get('/', (req, res) => {
 
 app.post('/api/register', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const username = req.body.username ? req.body.username.trim() : '';
+        const password = req.body.password;
         let userTag = generateTag();
         let fullTag = `${username}#${userTag}`;
         
@@ -70,10 +71,12 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
-        let user = await User.findOne({ fullTag: username, password });
+        const username = req.body.username ? req.body.username.trim() : '';
+        const password = req.body.password;
+        
+        let user = await User.findOne({ fullTag: new RegExp(`^${username}$`, 'i'), password });
         if (!user) {
-            user = await User.findOne({ username, password });
+            user = await User.findOne({ username: new RegExp(`^${username}$`, 'i'), password });
         }
         if (!user) return res.status(400).json({ error: 'Geçersiz kullanıcı adı veya şifre.' });
         res.json({ fullTag: user.fullTag });
@@ -84,9 +87,12 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/forgot-password', async (req, res) => {
     try {
-        const { username, userTag, newPassword } = req.body;
+        const username = req.body.username ? req.body.username.trim() : '';
+        const userTag = req.body.userTag ? req.body.userTag.trim() : '';
+        const newPassword = req.body.newPassword;
         const fullTag = userTag.startsWith('#') ? `${username}${userTag}` : `${username}#${userTag}`;
-        const user = await User.findOne({ fullTag });
+        
+        const user = await User.findOne({ fullTag: new RegExp(`^${fullTag}$`, 'i') });
         if (!user) return res.status(400).json({ error: 'Kullanıcı bulunamadı.' });
         user.password = newPassword;
         await user.save();
@@ -98,8 +104,8 @@ app.post('/api/forgot-password', async (req, res) => {
 
 app.post('/api/get-user-data', async (req, res) => {
     try {
-        const { fullTag } = req.body;
-        const user = await User.findOne({ fullTag });
+        const fullTag = req.body.fullTag ? req.body.fullTag.trim() : '';
+        const user = await User.findOne({ fullTag: new RegExp(`^${fullTag}$`, 'i') });
         if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
         res.json({
             friends: user.friends,
@@ -114,10 +120,13 @@ app.post('/api/get-user-data', async (req, res) => {
 
 app.post('/api/send-request', async (req, res) => {
     try {
-        const { senderFullTag, targetInput } = req.body;
-        let targetUser = await User.findOne({ fullTag: targetInput });
+        const senderFullTag = req.body.senderFullTag ? req.body.senderFullTag.trim() : '';
+        const targetInput = req.body.targetInput ? req.body.targetInput.trim() : '';
+        if (!targetInput) return res.status(400).json({ error: 'Geçersiz giriş.' });
+        
+        let targetUser = await User.findOne({ fullTag: new RegExp(`^${targetInput}$`, 'i') });
         if (!targetUser && !targetInput.includes('#')) {
-            targetUser = await User.findOne({ username: targetInput });
+            targetUser = await User.findOne({ username: new RegExp(`^${targetInput}$`, 'i') });
         }
         
         if (!targetUser) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
@@ -136,9 +145,11 @@ app.post('/api/send-request', async (req, res) => {
 
 app.post('/api/accept-request', async (req, res) => {
     try {
-        const { userFullTag, requesterFullTag } = req.body;
-        const user = await User.findOne({ fullTag: userFullTag });
-        const requester = await User.findOne({ fullTag: requesterFullTag });
+        const userFullTag = req.body.userFullTag ? req.body.userFullTag.trim() : '';
+        const requesterFullTag = req.body.requesterFullTag ? req.body.requesterFullTag.trim() : '';
+        
+        const user = await User.findOne({ fullTag: new RegExp(`^${userFullTag}$`, 'i') });
+        const requester = await User.findOne({ fullTag: new RegExp(`^${requesterFullTag}$`, 'i') });
 
         if (!user || !requester) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
 
@@ -156,8 +167,10 @@ app.post('/api/accept-request', async (req, res) => {
 
 app.post('/api/reject-request', async (req, res) => {
     try {
-        const { userFullTag, requesterFullTag } = req.body;
-        const user = await User.findOne({ fullTag: userFullTag });
+        const userFullTag = req.body.userFullTag ? req.body.userFullTag.trim() : '';
+        const requesterFullTag = req.body.requesterFullTag ? req.body.requesterFullTag.trim() : '';
+        
+        const user = await User.findOne({ fullTag: new RegExp(`^${userFullTag}$`, 'i') });
         if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
         user.friendRequests = user.friendRequests.filter(f => f !== requesterFullTag);
         await user.save();
@@ -169,9 +182,11 @@ app.post('/api/reject-request', async (req, res) => {
 
 app.post('/api/remove-friend', async (req, res) => {
     try {
-        const { userFullTag, friendFullTag } = req.body;
-        const user = await User.findOne({ fullTag: userFullTag });
-        const friend = await User.findOne({ fullTag: friendFullTag });
+        const userFullTag = req.body.userFullTag ? req.body.userFullTag.trim() : '';
+        const friendFullTag = req.body.friendFullTag ? req.body.friendFullTag.trim() : '';
+        
+        const user = await User.findOne({ fullTag: new RegExp(`^${userFullTag}$`, 'i') });
+        const friend = await User.findOne({ fullTag: new RegExp(`^${friendFullTag}$`, 'i') });
 
         if (user) {
             user.friends = user.friends.filter(f => f !== friendFullTag);
@@ -189,9 +204,11 @@ app.post('/api/remove-friend', async (req, res) => {
 
 app.post('/api/block-user', async (req, res) => {
     try {
-        const { userFullTag, targetFullTag } = req.body;
-        const user = await User.findOne({ fullTag: userFullTag });
-        const target = await User.findOne({ fullTag: targetFullTag });
+        const userFullTag = req.body.userFullTag ? req.body.userFullTag.trim() : '';
+        const targetFullTag = req.body.targetFullTag ? req.body.targetFullTag.trim() : '';
+        
+        const user = await User.findOne({ fullTag: new RegExp(`^${userFullTag}$`, 'i') });
+        const target = await User.findOne({ fullTag: new RegExp(`^${targetFullTag}$`, 'i') });
 
         if (user) {
             user.friends = user.friends.filter(f => f !== targetFullTag);
@@ -210,8 +227,10 @@ app.post('/api/block-user', async (req, res) => {
 
 app.post('/api/unblock-user', async (req, res) => {
     try {
-        const { userFullTag, targetFullTag } = req.body;
-        const user = await User.findOne({ fullTag: userFullTag });
+        const userFullTag = req.body.userFullTag ? req.body.userFullTag.trim() : '';
+        const targetFullTag = req.body.targetFullTag ? req.body.targetFullTag.trim() : '';
+        
+        const user = await User.findOne({ fullTag: new RegExp(`^${userFullTag}$`, 'i') });
         if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
         
         user.blockedUsers = user.blockedUsers.filter(b => b !== targetFullTag);
@@ -220,7 +239,7 @@ app.post('/api/unblock-user', async (req, res) => {
         }
         await user.save();
 
-        const target = await User.findOne({ fullTag: targetFullTag });
+        const target = await User.findOne({ fullTag: new RegExp(`^${targetFullTag}$`, 'i') });
         if (target && !target.friends.includes(userFullTag)) {
             target.friends.push(userFullTag);
             await target.save();
@@ -234,12 +253,14 @@ app.post('/api/unblock-user', async (req, res) => {
 
 app.post('/api/create-group', async (req, res) => {
     try {
-        const { groupName, creator, members } = req.body;
+        const groupName = req.body.groupName ? req.body.groupName.trim() : '';
+        const creator = req.body.creator ? req.body.creator.trim() : '';
+        const members = req.body.members || [];
         if (!groupName) return res.status(400).json({ error: 'Grup adı gereklidir.' });
 
         const allMembers = [creator, ...members];
         for (const mTag of allMembers) {
-            const u = await User.findOne({ fullTag: mTag });
+            const u = await User.findOne({ fullTag: new RegExp(`^${mTag.trim()}$`, 'i') });
             if (u) {
                 if (!u.groups.some(g => g.groupName === groupName)) {
                     u.groups.push({ groupName });
@@ -255,8 +276,9 @@ app.post('/api/create-group', async (req, res) => {
 
 app.post('/api/leave-group', async (req, res) => {
     try {
-        const { fullTag, groupName } = req.body;
-        const user = await User.findOne({ fullTag });
+        const fullTag = req.body.fullTag ? req.body.fullTag.trim() : '';
+        const groupName = req.body.groupName ? req.body.groupName.trim() : '';
+        const user = await User.findOne({ fullTag: new RegExp(`^${fullTag}$`, 'i') });
         if (user) {
             user.groups = user.groups.filter(g => g.groupName !== groupName);
             await user.save();
