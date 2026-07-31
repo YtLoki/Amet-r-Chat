@@ -12,10 +12,9 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // MongoDB Bağlantısı
-mongoose.connect('mongodb://localhost:27017/ametrchat', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => console.log('MongoDB Bağlandı')).catch(err => console.log(err));
+mongoose.connect('mongodb://localhost:27017/ametrchat')
+    .then(() => console.log('MongoDB Bağlandı'))
+    .catch(err => console.log(err));
 
 // Mongoose Modelleri
 const userSchema = new mongoose.Schema({
@@ -44,6 +43,10 @@ function generateTag() {
 }
 
 // --- API ENDPOINTS ---
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public_index.html'));
+});
+
 app.post('/api/register', async (req, res) => {
     try {
         const { username, password } = req.body;
