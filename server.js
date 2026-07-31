@@ -2,22 +2,18 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.json());
-app.use(express.static(__dirname));
-
-// Ana dizin yönlendirmesi (public_index.html)
-app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/public_index.html');
-});
+app.use(express.static(path.join(__dirname, 'public')));
 
 // MongoDB Bağlantısı
 const MONGO_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/darkchat";
-
 mongoose.connect(MONGO_URI)
     .then(() => console.log("MongoDB bağlantısı başarılı."))
     .catch(err => console.error("MongoDB bağlantı hatası:", err));
@@ -36,13 +32,14 @@ const User = mongoose.model('User', userSchema);
 
 const messageSchema = new mongoose.Schema({
     room: String,
-    username: String,
+    sender: String,
     content: String,
     timestamp: { type: Date, default: Date.now }
 });
 const Message = mongoose.model('Message', messageSchema);
 
-async function generateUniqueTag(username) {
+// Yardımcı Fonksiyonlar
+async function generateUniqueTag() {
     let tag, exists;
     do {
         const randomNum = Math.floor(1000 + Math.random() * 9000);
@@ -52,26 +49,27 @@ async function generateUniqueTag(username) {
     return tag;
 }
 
-// API Uç Noktaları
+function parseTag(fullTag) {
+    if (!fullTag || !fullTag.includes('#')) return { username: fullTag, userTag: '' };
+    const parts = fullTag.split('#');
+    return { username: parts[0], userTag: '#' + parts[1] };
+}
+
+// API ENDPOINTS
+
 app.post('/api/register', async (req, res) => {
     try {
         const { username, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).json({ error: "Tüm alanları doldurun." });
-        }
+        if (!username || !password) return res.status(400).json({ error: "Tüm alanları doldurun." });
 
-        const userTag = await generateUniqueTag(username);
+        const userTag = await generateUniqueTag();
         const fullTag = `${username}${userTag}`;
-
-        const existingUser = await User.findOne({ userTag });
-        if (existingUser) {
-            return res.status(400).json({ error: "Bu ID zaten kullanımda, tekrar deneyin." });
-        }
+        const hashedPassword = await bcrypt.hash(password, 10);
 
         const newUser = new User({
             username,
             userTag,
-            password,
+            password: hashedPassword,
             friends: [],
             friendRequests: [],
             blockedUsers: [],
@@ -89,14 +87,15 @@ app.post('/api/login', async (req, res) => {
     try {
         const { username, password } = req.body;
         let user;
+
         if (username.includes('#')) {
-            const parts = username.split('#');
-            user = await User.findOne({ username: parts[0], userTag: '#' + parts[1], password });
+            const { username: uName, userTag } = parseTag(username);
+            user = await User.findOne({ username: uName, userTag });
         } else {
-            user = await User.findOne({ username, password });
+            user = await User.findOne({ username });
         }
 
-        if (!user) {
+        if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(400).json({ error: "Geçersiz kullanıcı adı veya şifre." });
         }
 
@@ -107,28 +106,10 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-app.post('/api/forgot-password', async (req, res) => {
-    try {
-        const { username, userTag, newPassword } = req.body;
-        const user = await User.findOne({ username, userTag });
-        if (!user) {
-            return res.status(404).json({ error: "Kullanıcı bulunamadı veya ID hatalı." });
-        }
-
-        user.password = newPassword;
-        await user.save();
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "Şifre sıfırlanamadı." });
-    }
-});
-
 app.post('/api/get-user-data', async (req, res) => {
     try {
         const { fullTag } = req.body;
-        const parts = fullTag.split('#');
-        const username = parts[0];
-        const userTag = '#' + parts[1];
+        const { username, userTag } = parseTag(fullTag);
 
         const user = await User.findOne({ username, userTag });
         if (!user) return res.status(404).json({ error: "Kullanıcı bulunamadı." });
@@ -148,35 +129,19 @@ app.post('/api/get-user-data', async (req, res) => {
 app.post('/api/send-request', async (req, res) => {
     try {
         const { senderFullTag, targetInput } = req.body;
-        const cleanTarget = targetInput.trim();
+        const targetUser = await User.findOne({ userTag: targetInput.trim() });
 
-        const targetUser = await User.findOne({ userTag: cleanTarget });
-        if (!targetUser) {
-            return res.status(404).json({ error: "Bu ID'ye sahip kullanıcı bulunamadı." });
-        }
+        if (!targetUser) return res.status(404).json({ error: "Kullanıcı bulunamadı." });
 
         const targetFullTag = `${targetUser.username}${targetUser.userTag}`;
-        if (senderFullTag === targetFullTag) {
-            return res.status(400).json({ error: "Kendine istek atamazsın." });
-        }
+        if (senderFullTag === targetFullTag) return res.status(400).json({ error: "Kendine istek atamazsın." });
 
-        const senderParts = senderFullTag.split('#');
-        const senderUser = await User.findOne({ username: senderParts[0], userTag: '#' + senderParts[1] });
-
-        if (senderUser.friends.includes(targetFullTag)) {
-            return res.status(400).json({ error: "Bu kullanıcı zaten arkadaşınız." });
-        }
-
-        if (targetUser.friendRequests.includes(senderFullTag)) {
-            return res.status(400).json({ error: "Zaten istek gönderilmiş." });
-        }
-
-        if (targetUser.blockedUsers.includes(senderFullTag)) {
-            return res.status(400).json({ error: "Bu kullanıcıya istek gönderemezsiniz." });
-        }
+        if (targetUser.friendRequests.includes(senderFullTag)) return res.status(400).json({ error: "Zaten istek gönderilmiş." });
 
         targetUser.friendRequests.push(senderFullTag);
         await targetUser.save();
+
+        io.to(targetFullTag).emit('update_data');
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: "İstek gönderilemedi." });
@@ -186,11 +151,11 @@ app.post('/api/send-request', async (req, res) => {
 app.post('/api/accept-request', async (req, res) => {
     try {
         const { userFullTag, requesterFullTag } = req.body;
-        const uParts = userFullTag.split('#');
-        const user = await User.findOne({ username: uParts[0], userTag: '#' + uParts[1] });
+        const u = parseTag(userFullTag);
+        const r = parseTag(requesterFullTag);
 
-        const rParts = requesterFullTag.split('#');
-        const requester = await User.findOne({ username: rParts[0], userTag: '#' + rParts[1] });
+        const user = await User.findOne({ username: u.username, userTag: u.userTag });
+        const requester = await User.findOne({ username: r.username, userTag: r.userTag });
 
         if (user && requester) {
             user.friendRequests = user.friendRequests.filter(tag => tag !== requesterFullTag);
@@ -199,6 +164,8 @@ app.post('/api/accept-request', async (req, res) => {
 
             await user.save();
             await requester.save();
+
+            io.to(requesterFullTag).emit('update_data');
         }
         res.json({ success: true });
     } catch (err) {
@@ -206,88 +173,20 @@ app.post('/api/accept-request', async (req, res) => {
     }
 });
 
-app.post('/api/reject-request', async (req, res) => {
-    try {
-        const { userFullTag, requesterFullTag } = req.body;
-        const uParts = userFullTag.split('#');
-        const user = await User.findOne({ username: uParts[0], userTag: '#' + uParts[1] });
-
-        if (user) {
-            user.friendRequests = user.friendRequests.filter(tag => tag !== requesterFullTag);
-            await user.save();
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "İstek reddedilemedi." });
-    }
-});
-
-app.post('/api/remove-friend', async (req, res) => {
-    try {
-        const { userFullTag, friendTag } = req.body;
-        const uParts = userFullTag.split('#');
-        const user = await User.findOne({ username: uParts[0], userTag: '#' + uParts[1] });
-
-        const fParts = friendTag.split('#');
-        const friend = await User.findOne({ username: fParts[0], userTag: '#' + fParts[1] });
-
-        if (user) user.friends = user.friends.filter(t => t !== friendTag);
-        if (friend) friend.friends = friend.friends.filter(t => t !== userFullTag);
-
-        if (user) await user.save();
-        if (friend) await friend.save();
-
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "Arkadaş silinemedi." });
-    }
-});
-
-app.post('/api/block-user', async (req, res) => {
-    try {
-        const { userFullTag, blockedTag } = req.body;
-        const uParts = userFullTag.split('#');
-        const user = await User.findOne({ username: uParts[0], userTag: '#' + uParts[1] });
-
-        if (user) {
-            user.friends = user.friends.filter(t => t !== blockedTag);
-            if (!user.blockedUsers.includes(blockedTag)) user.blockedUsers.push(blockedTag);
-            await user.save();
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "Kullanıcı engellenemedi." });
-    }
-});
-
-app.post('/api/unblock-user', async (req, res) => {
-    try {
-        const { userFullTag, blockedTag } = req.body;
-        const uParts = userFullTag.split('#');
-        const user = await User.findOne({ username: uParts[0], userTag: '#' + uParts[1] });
-
-        if (user) {
-            user.blockedUsers = user.blockedUsers.filter(t => t !== blockedTag);
-            await user.save();
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "Engel kaldırılamadı." });
-    }
-});
-
 app.post('/api/create-group', async (req, res) => {
     try {
-        const { groupName, adminTag, selectedMembers } = req.body;
+        const { groupName, creator, members } = req.body;
         if (!groupName) return res.status(400).json({ error: "Grup adı gerekli." });
 
-        const allMembers = [adminTag, ...selectedMembers];
+        const allMembers = Array.from(new Set([creator, ...(members || [])]));
+
         for (let memberTag of allMembers) {
-            const mParts = memberTag.split('#');
-            const memberUser = await User.findOne({ username: mParts[0], userTag: '#' + mParts[1] });
-            if (memberUser) {
-                memberUser.groups.push({ groupName, adminTag });
+            const m = parseTag(memberTag);
+            const memberUser = await User.findOne({ username: m.username, userTag: m.userTag });
+            if (memberUser && !memberUser.groups.some(g => g.groupName === groupName)) {
+                memberUser.groups.push({ groupName, adminTag: creator });
                 await memberUser.save();
+                io.to(memberTag).emit('update_data');
             }
         }
         res.json({ success: true });
@@ -296,31 +195,30 @@ app.post('/api/create-group', async (req, res) => {
     }
 });
 
-app.post('/api/leave-group', async (req, res) => {
-    try {
-        const { groupName, userFullTag } = req.body;
-        const uParts = userFullTag.split('#');
-        const user = await User.findOne({ username: uParts[0], userTag: '#' + uParts[1] });
-
-        if (user) {
-            user.groups = user.groups.filter(g => g.groupName !== groupName);
-            await user.save();
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "Gruptan çıkılamadı." });
-    }
-});
-
-// Socket.io
+// SOCKET.IO GERÇEK ZAMANLI SOHBET
 io.on('connection', (socket) => {
+
+    socket.on('register_user', (fullTag) => {
+        socket.join(fullTag);
+    });
+
     socket.on('join room', async (room) => {
         socket.join(room);
         try {
-            const messages = await Message.find({ room }).sort({ timestamp: 1 }).limit(50);
-            socket.emit('load room messages', { room, messages });
+            const messages = await Message.find({ room }).sort({ timestamp: 1 }).limit(100);
+            const formattedMessages = messages.map(m => {
+                const date = new Date(m.timestamp);
+                const timeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+                return {
+                    room: m.room,
+                    sender: m.sender,
+                    text: m.content,
+                    time: timeStr
+                };
+            });
+            socket.emit('load_room_messages', formattedMessages);
         } catch (err) {
-            console.error("Mesajlar yüklenirken hata:", err);
+            console.error(err);
         }
     });
 
@@ -328,23 +226,25 @@ io.on('connection', (socket) => {
         try {
             const newMessage = new Message({
                 room: data.room,
-                username: data.senderTag,
+                sender: data.sender,
                 content: data.text
             });
             await newMessage.save();
 
+            const date = new Date();
+            const timeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+
             io.to(data.room).emit('chat message', {
                 room: data.room,
-                username: data.senderTag,
-                content: data.text
+                sender: data.sender,
+                text: data.text,
+                time: timeStr
             });
         } catch (err) {
-            console.error("Mesaj kaydedilemedi:", err);
+            console.error(err);
         }
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Sunucu ${PORT} portunda çalışıyor.`);
-});
+server.listen(PORT, () => console.log(`Sunucu ${PORT} üzerinde aktif.`));

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DarkChat - Mesajlaşma Uygulaması</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #0b0e14; color: #e1e6ed; height: 100vh; display: flex; justify-content: center; align-items: center; }
+
+        /* Auth Screen */
+        #auth-container { background: #151a21; padding: 30px; border-radius: 12px; width: 350px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); text-align: center; }
+        #auth-container h2 { margin-bottom: 20px; color: #6366f1; }
+        .input-group { margin-bottom: 15px; }
+        .input-group input { width: 100%; padding: 12px; background: #0b0e14; border: 1px solid #2a323d; border-radius: 6px; color: #fff; outline: none; }
+        .btn { width: 100%; padding: 12px; background: #6366f1; border: none; border-radius: 6px; color: #fff; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn:hover { background: #4f46e5; }
+        .switch-auth { margin-top: 15px; font-size: 0.85em; color: #94a3b8; cursor: pointer; }
+
+        /* Main App Panel */
+        #app-container { display: none; width: 95vw; height: 90vh; background: #151a21; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+        .chat-app { display: flex; width: 100%; height: 100%; }
+
+        /* Sidebar */
+        .sidebar { width: 320px; background: #11151c; border-right: 1px solid #2a323d; display: flex; flex-direction: column; }
+        .user-header { padding: 15px; background: #1a202c; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a323d; }
+        .user-tag { font-size: 0.9em; font-weight: bold; color: #38bdf8; }
+        .tabs { display: flex; background: #151a21; border-bottom: 1px solid #2a323d; }
+        .tab-btn { flex: 1; padding: 12px; background: none; border: none; color: #94a3b8; cursor: pointer; font-weight: bold; }
+        .tab-btn.active { color: #6366f1; border-bottom: 2px solid #6366f1; }
+        .list-container { flex: 1; overflow-y: auto; padding: 10px; }
+        .list-item { padding: 12px; background: #1a202c; margin-bottom: 8px; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .list-item:hover { background: #222938; }
+
+        /* Actions Section */
+        .action-box { padding: 10px; border-top: 1px solid #2a323d; background: #11151c; }
+        .action-box input { width: 100%; padding: 8px; background: #0b0e14; border: 1px solid #2a323d; border-radius: 4px; color: #fff; margin-bottom: 5px; }
+
+        /* Chat Main Area */
+        .chat-area { flex: 1; display: flex; flex-direction: column; background: #0b0e14; }
+        .chat-header { padding: 15px; background: #151a21; border-bottom: 1px solid #2a323d; font-weight: bold; color: #fff; }
+        .messages-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        
+        /* Message Bubbles */
+        .message { max-width: 60%; padding: 10px 14px; border-radius: 12px; font-size: 0.95em; position: relative; word-wrap: break-word; }
+        .message.sent { align-self: flex-end; background: #6366f1; color: #fff; border-bottom-right-radius: 2px; }
+        .message.received { align-self: flex-start; background: #1e293b; color: #e2e8f0; border-bottom-left-radius: 2px; }
+        .msg-sender { font-size: 0.75em; color: #38bdf8; margin-bottom: 3px; font-weight: bold; }
+        .msg-time { font-size: 0.65em; opacity: 0.7; display: block; text-align: right; margin-top: 4px; }
+
+        /* Input Box */
+        .chat-input-area { padding: 15px; background: #151a21; display: flex; gap: 10px; border-top: 1px solid #2a323d; }
+        .chat-input-area input { flex: 1; padding: 12px; background: #0b0e14; border: 1px solid #2a323d; border-radius: 6px; color: #fff; outline: none; }
+        .chat-input-area button { width: auto; padding: 0 20px; }
+    </style>
+</head>
+<body>
+
+    <!-- AUTH SCREEN -->
+    <div id="auth-container">
+        <h2 id="auth-title">Giriş Yap</h2>
+        <div class="input-group">
+            <input type="text" id="auth-username" placeholder="Kullanıcı Adı veya ID (ör: Hasan#1234)">
+        </div>
+        <div class="input-group">
+            <input type="password" id="auth-password" placeholder="Şifre">
+        </div>
+        <button class="btn" id="auth-submit-btn" onclick="handleAuth()">Giriş Yap</button>
+        <div class="switch-auth" id="auth-switch" onclick="toggleAuthMode()">Hesabın yok mu? Kayıt Ol</div>
+    </div>
+
+    <!-- MAIN APP SCREEN -->
+    <div id="app-container">
+        <div class="chat-app">
+            <!-- SIDEBAR -->
+            <div class="sidebar">
+                <div class="user-header">
+                    <div>
+                        <div style="font-size:0.8em; color:#94a3b8;">Giriş Yapıldı:</div>
+                        <div class="user-tag" id="my-tag-display">-</div>
+                    </div>
+                    <button style="background:none; border:none; color:#ef4444; cursor:pointer; font-weight:bold;" onclick="logout()">Çıkış</button>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="switchTab('friends')">Arkadaşlar</button>
+                    <button class="tab-btn" onclick="switchTab('groups')">Gruplar</button>
+                    <button class="tab-btn" onclick="switchTab('requests')">İstekler</button>
+                </div>
+
+                <div class="list-container" id="sidebar-list">
+                    <!-- Dinamik İçerik -->
+                </div>
+
+                <div class="action-box">
+                    <div id="action-friend">
+                        <input type="text" id="target-id-input" placeholder="Eklenecek Tag (ör: #1234)">
+                        <button class="btn" onclick="sendFriendRequest()">İstek Gönder</button>
+                    </div>
+                    <div id="action-group" style="display:none;">
+                        <input type="text" id="group-name-input" placeholder="Grup Adı">
+                        <button class="btn" onclick="createGroup()">Grup Oluştur</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHAT AREA -->
+            <div class="chat-area">
+                <div class="chat-header" id="chat-header">Bir sohbet seçin</div>
+                <div class="messages-box" id="messages-box">
+                    <!-- Mesajlar buraya akacak -->
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="message-input" placeholder="Mesajınızı yazın..." onkeydown="if(event.key==='Enter') sendMessage()">
+                    <button class="btn" onclick="sendMessage()">Gönder</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let isLoginMode = true;
+        let myFullTag = '';
+        let myUserTag = '';
+        let activeTab = 'friends';
+        let currentRoom = null;
+        let userData = { friends: [], friendRequests: [], groups: [] };
+
+        // AUTH İŞLEMLERİ
+        function toggleAuthMode() {
+            isLoginMode = !isLoginMode;
+            document.getElementById('auth-title').innerText = isLoginMode ? "Giriş Yap" : "Kayıt Ol";
+            document.getElementById('auth-submit-btn').innerText = isLoginMode ? "Giriş Yap" : "Kayıt Ol";
+            document.getElementById('auth-switch').innerText = isLoginMode ? "Hesabın yok mu? Kayıt Ol" : "Zaten hesabın var mı? Giriş Yap";
+        }
+
+        async function handleAuth() {
+            const username = document.getElementById('auth-username').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+            if(!username || !password) return alert("Alanları doldurun!");
+
+            const endpoint = isLoginMode ? '/api/login' : '/api/register';
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+
+            if(data.success) {
+                myFullTag = data.fullTag;
+                myUserTag = data.userTag;
+                document.getElementById('my-tag-display').innerText = myFullTag;
+                document.getElementById('auth-container').style.display = 'none';
+                document.getElementById('app-container').style.display = 'block';
+                
+                socket.emit('register_user', myFullTag);
+                loadUserData();
+            } else {
+                alert(data.error || "İşlem başarısız.");
+            }
+        }
+
+        function logout() { location.reload(); }
+
+        // VERİ YÜKLEME & SEKME YÖNETİMİ
+        async function loadUserData() {
+            const res = await fetch('/api/get-user-data', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ fullTag: myFullTag })
+            });
+            userData = await res.json();
+            renderSidebar();
+        }
+
+        function switchTab(tab) {
+            activeTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            document.getElementById('action-friend').style.display = tab === 'friends' ? 'block' : 'none';
+            document.getElementById('action-group').style.display = tab === 'groups' ? 'block' : 'none';
+            renderSidebar();
+        }
+
+        function renderSidebar() {
+            const list = document.getElementById('sidebar-list');
+            list.innerHTML = '';
+
+            if (activeTab === 'friends') {
+                userData.friends.forEach(friendTag => {
+                    const item = document.createElement('div');
+                    item.className = 'list-item';
+                    item.innerText = friendTag;
+                    item.onclick = () => openPrivateChat(friendTag);
+                    list.appendChild(item);
+                });
+            } else if (activeTab === 'groups') {
+                userData.groups.forEach(g => {
+                    const item = document.createElement('div');
+                    item.className = 'list-item';
+                    item.innerText = `👥 ${g.groupName}`;
+                    item.onclick = () => openGroupChat(g.groupName);
+                    list.appendChild(item);
+                });
+            } else if (activeTab === 'requests') {
+                userData.friendRequests.forEach(reqTag => {
+                    const item = document.createElement('div');
+                    item.className = 'list-item';
+                    item.innerHTML = `
+                        <span>${reqTag}</span>
+                        <button class="btn" style="width:auto; padding:4px 8px; font-size:0.8em;" onclick="acceptRequest('${reqTag}')">Kabul Et</button>
+                    `;
+                    list.appendChild(item);
+                });
+            }
+        }
+
+        // İŞLEMLER
+        async function sendFriendRequest() {
+            const targetInput = document.getElementById('target-id-input').value.trim();
+            if(!targetInput) return;
+
+            const res = await fetch('/api/send-request', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ senderFullTag: myFullTag, targetInput })
+            });
+            const data = await res.json();
+            if(data.success) {
+                alert("İstek gönderildi.");
+                document.getElementById('target-id-input').value = '';
+            } else alert(data.error);
+        }
+
+        async function acceptRequest(requesterFullTag) {
+            await fetch('/api/accept-request', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ userFullTag: myFullTag, requesterFullTag })
+            });
+            loadUserData();
+        }
+
+        async function createGroup() {
+            const groupName = document.getElementById('group-name-input').value.trim();
+            if(!groupName) return;
+
+            await fetch('/api/create-group', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ groupName, creator: myFullTag, members: [] })
+            });
+            document.getElementById('group-name-input').value = '';
+            loadUserData();
+        }
+
+        // SOHBET ODALARI & SOKET
+        function openPrivateChat(friendTag) {
+            // İki kullanıcı arasında alfabetik sıralı benzersiz oda adı
+            const room = [myFullTag, friendTag].sort().join('_');
+            joinRoom(room, friendTag);
+        }
+
+        function openGroupChat(groupName) {
+            joinRoom(`group_${groupName}`, `Grup: ${groupName}`);
+        }
+
+        function joinRoom(room, title) {
+            currentRoom = room;
+            document.getElementById('chat-header').innerText = title;
+            document.getElementById('messages-box').innerHTML = '';
+            socket.emit('join room', room);
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            if(!text || !currentRoom) return;
+
+            socket.emit('chat message', { room: currentRoom, sender: myFullTag, text });
+            input.value = '';
+        }
+
+        // SOKET DİNLENİCİLERİ
+        socket.on('load_room_messages', (messages) => {
+            const box = document.getElementById('messages-box');
+            box.innerHTML = '';
+            messages.forEach(appendMessage);
+            box.scrollTop = box.scrollHeight;
+        });
+
+        socket.on('chat message', (data) => {
+            if(data.room === currentRoom) {
+                appendMessage(data);
+                const box = document.getElementById('messages-box');
+                box.scrollTop = box.scrollHeight;
+            }
+        });
+
+        socket.on('update_data', () => {
+            loadUserData();
+        });
+
+        function appendMessage(msg) {
+            const box = document.getElementById('messages-box');
+            const isMe = msg.sender === myFullTag;
+            const div = document.createElement('div');
+            div.className = `message ${isMe ? 'sent' : 'received'}`;
+            div.innerHTML = `
+                ${!isMe ? `<div class="msg-sender">${msg.sender}</div>` : ''}
+                <div>${escapeHtml(msg.text)}</div>
+                <span class="msg-time">${msg.time || ''}</span>
+            `;
+            box.appendChild(div);
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+    </script>
+</body>
+</html>
