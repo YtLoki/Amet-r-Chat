@@ -10,8 +10,6 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.json());
-
-// Statik dosyaları ve ana sayfayı sunma
 app.use(express.static(__dirname));
 
 app.get('/', (req, res) => {
@@ -190,10 +188,53 @@ app.post('/api/accept-request', async (req, res) => {
             await requester.save();
 
             io.to(requesterFullTag).emit('update_data');
+            io.to(userFullTag).emit('update_data');
         }
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: "İstek kabul edilemedi." });
+    }
+});
+
+app.post('/api/reject-request', async (req, res) => {
+    try {
+        const { userFullTag, requesterFullTag } = req.body;
+        const u = parseTag(userFullTag);
+
+        const user = await User.findOne({ username: u.username, userTag: u.userTag });
+        if (user) {
+            user.friendRequests = user.friendRequests.filter(tag => tag !== requesterFullTag);
+            await user.save();
+            io.to(userFullTag).emit('update_data');
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "İstek reddedilemedi." });
+    }
+});
+
+app.post('/api/remove-friend', async (req, res) => {
+    try {
+        const { userFullTag, friendFullTag } = req.body;
+        const u = parseTag(userFullTag);
+        const f = parseTag(friendFullTag);
+
+        const user = await User.findOne({ username: u.username, userTag: u.userTag });
+        const friend = await User.findOne({ username: f.username, userTag: f.userTag });
+
+        if (user) {
+            user.friends = user.friends.filter(tag => tag !== friendFullTag);
+            await user.save();
+            io.to(userFullTag).emit('update_data');
+        }
+        if (friend) {
+            friend.friends = friend.friends.filter(tag => tag !== userFullTag);
+            await friend.save();
+            io.to(friendFullTag).emit('update_data');
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "Arkadaşlıktan çıkarılamadı." });
     }
 });
 
@@ -258,13 +299,28 @@ app.post('/api/unblock-user', async (req, res) => {
     try {
         const { userFullTag, targetFullTag } = req.body;
         const u = parseTag(userFullTag);
+        const t = parseTag(targetFullTag);
+
         const user = await User.findOne({ username: u.username, userTag: u.userTag });
+        const targetUser = await User.findOne({ username: t.username, userTag: t.userTag });
 
         if (user) {
             user.blockedUsers = user.blockedUsers.filter(b => b !== targetFullTag);
+            if (!user.friends.includes(targetFullTag)) {
+                user.friends.push(targetFullTag);
+            }
             await user.save();
             io.to(userFullTag).emit('update_data');
         }
+
+        if (targetUser) {
+            if (!targetUser.friends.includes(userFullTag)) {
+                targetUser.friends.push(userFullTag);
+                await targetUser.save();
+            }
+            io.to(targetFullTag).emit('update_data');
+        }
+
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: "Engel kaldırılamadı." });
