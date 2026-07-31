@@ -2,64 +2,75 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Amet-r-Chat</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
         body { background: #0b0e14; color: #e1e6ed; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 
-        .auth-container { background: #151922; padding: 30px; border-radius: 12px; width: 350px; border: 1px solid #232936; }
+        .auth-container { background: #151922; padding: 25px; border-radius: 12px; width: 90%; max-width: 350px; border: 1px solid #232936; }
         .auth-container h2 { margin-bottom: 20px; text-align: center; }
         .input-group { margin-bottom: 15px; position: relative; }
-        .input-group input { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #2a3245; background: #0b0e14; color: #fff; }
-        .toggle-btn { position: absolute; right: 8px; top: 8px; background: transparent; border: 1px solid #444; color: #ccc; padding: 3px 8px; font-size: 11px; cursor: pointer; border-radius: 4px; }
-        .btn { width: 100%; padding: 10px; background: #5865f2; border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        .input-group input { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #2a3245; background: #0b0e14; color: #fff; font-size: 14px; }
+        .toggle-btn { position: absolute; right: 8px; top: 10px; background: transparent; border: 1px solid #444; color: #ccc; padding: 3px 8px; font-size: 11px; cursor: pointer; border-radius: 4px; }
+        .btn { width: 100%; padding: 12px; background: #5865f2; border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; font-size: 14px; }
         .btn:hover { background: #4752c4; }
         .auth-extras { display: flex; justify-content: space-between; font-size: 12px; margin-top: 10px; color: #a0a0a0; }
         .auth-extras a { color: #5865f2; text-decoration: none; cursor: pointer; }
 
-        .app-container { display: none; width: 100vw; height: 100vh; flex-direction: row; }
+        .app-container { display: none; width: 100vw; height: 100vh; flex-direction: row; position: relative; }
         
-        .sidebar { width: 320px; background: #151922; border-right: 1px solid #232936; display: flex; flex-direction: column; transition: all 0.2s ease; }
-        .sidebar.collapsed { display: none !important; }
+        .sidebar { width: 320px; background: #151922; border-right: 1px solid #232936; display: flex; flex-direction: column; transition: all 0.2s ease; z-index: 10; }
         .sidebar-header { padding: 15px; border-bottom: 1px solid #232936; display: flex; justify-content: space-between; align-items: center; }
         .close-sidebar-btn { background: none; border: none; color: #aaa; font-size: 18px; cursor: pointer; font-weight: bold; }
-        .close-sidebar-btn:hover { color: #fff; }
 
         .tabs { display: flex; border-bottom: 1px solid #232936; background: #10131b; }
-        .tab-btn { flex: 1; padding: 10px 5px; background: none; border: none; color: #8a93a0; cursor: pointer; font-size: 11px; position: relative; }
+        .tab-btn { flex: 1; padding: 12px 5px; background: none; border: none; color: #8a93a0; cursor: pointer; font-size: 12px; position: relative; }
         .tab-btn.active { color: #fff; border-bottom: 2px solid #5865f2; font-weight: bold; }
 
         .badge { background: #ed4245; color: white; border-radius: 10px; padding: 1px 6px; font-size: 10px; margin-left: 4px; display: inline-block; }
         .badge:empty, .badge[data-count="0"] { display: none; }
 
         .tab-content { flex: 1; overflow-y: auto; padding: 10px; }
-        .list-item { background: #1c2230; padding: 10px; border-radius: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+        .list-item { background: #1c2230; padding: 12px; border-radius: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
         .list-item:hover { background: #252d3e; }
         .item-actions { display: flex; gap: 4px; }
 
         .chat-area { flex: 1; display: flex; flex-direction: column; background: #0b0e14; transition: all 0.2s ease; }
-        .chat-area.full-width { width: 100% !important; }
         .chat-header { padding: 15px; background: #151922; border-bottom: 1px solid #232936; display: flex; align-items: center; gap: 10px; }
-        .open-sidebar-btn { display: none; background: #232936; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
-        .chat-area.full-width .open-sidebar-btn { display: inline-block; }
+        .open-sidebar-btn { background: #232936; border: none; color: white; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
 
-        .messages-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-        .message-item { background: #1c2230; padding: 10px 14px; border-radius: 8px; max-width: 60%; word-break: break-word; }
+        .messages-box { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .message-item { background: #1c2230; padding: 10px 14px; border-radius: 8px; max-width: 80%; word-break: break-word; font-size: 14px; }
         .message-item.own { align-self: flex-end; background: #5865f2; }
         .message-info { font-size: 10px; opacity: 0.7; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 10px; }
 
-        .chat-input-area { padding: 15px; background: #151922; border-top: 1px solid #232936; display: flex; gap: 10px; }
-        .chat-input-area input { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #232936; background: #0b0e14; color: white; }
+        .chat-input-area { padding: 12px; background: #151922; border-top: 1px solid #232936; display: flex; gap: 10px; }
+        .chat-input-area input { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #232936; background: #0b0e14; color: white; font-size: 14px; }
 
-        .btn-sm { padding: 4px 8px; font-size: 11px; border-radius: 4px; border: none; cursor: pointer; color: white; }
+        .btn-sm { padding: 6px 10px; font-size: 12px; border-radius: 4px; border: none; cursor: pointer; color: white; }
         .btn-danger { background: #ed4245; }
         .btn-success { background: #3ba55d; }
         .btn-warning { background: #faa61a; }
 
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; }
-        .modal-content { background: #151922; padding: 20px; border-radius: 8px; width: 320px; border: 1px solid #232936; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; z-index: 100; }
+        .modal-content { background: #151922; padding: 20px; border-radius: 8px; width: 90%; max-width: 320px; border: 1px solid #232936; }
+
+        /* Mobil Uyumlu Duyarlı Tasarım (Responsive CSS) */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: absolute;
+                left: 0;
+                top: 0;
+                height: 100%;
+                width: 85%;
+                max-width: 300px;
+                box-shadow: 4px 0 15px rgba(0,0,0,0.5);
+            }
+            .sidebar.collapsed { display: none !important; }
+            .message-item { max-width: 88%; }
+        }
     </style>
 </head>
 <body>
@@ -88,20 +99,20 @@
     <div id="app-view" class="app-container">
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <span id="user-display-tag" style="font-weight: bold; font-size: 14px;"></span>
+                <span id="user-display-tag" style="font-weight: bold; font-size: 13px;"></span>
                 <button class="close-sidebar-btn" onclick="toggleSidebar()">X</button>
             </div>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('friends')">Arkadaşlar</button>
                 <button class="tab-btn" onclick="switchTab('groups')">Gruplar <span id="badge-groups" class="badge">0</span></button>
                 <button class="tab-btn" onclick="switchTab('requests')">İstekler <span id="badge-requests" class="badge">0</span></button>
-                <button class="tab-btn" onclick="switchTab('blocked')">Engellenenler</button>
+                <button class="tab-btn" onclick="switchTab('blocked')">Engeller</button>
             </div>
 
             <div class="tab-content">
                 <div id="tab-friends">
                     <div style="display:flex; gap:5px; margin-bottom:10px;">
-                        <input type="text" id="friend-tag-input" placeholder="#1234 Tag ile Ekle" style="flex:1; padding:6px; background:#0b0e14; border:1px solid #232936; color:white; border-radius:4px;">
+                        <input type="text" id="friend-tag-input" placeholder="#1234 Tag ile Ekle" style="flex:1; padding:8px; background:#0b0e14; border:1px solid #232936; color:white; border-radius:4px; font-size:12px;">
                         <button class="btn-sm btn-success" onclick="sendFriendRequest()">Ekle</button>
                     </div>
                     <div id="friends-list"></div>
@@ -125,7 +136,7 @@
         <div class="chat-area" id="chat-area">
             <div class="chat-header">
                 <button class="open-sidebar-btn" onclick="toggleSidebar()">Menü</button>
-                <h3 id="current-room-title">Bir Sohbet Seçin</h3>
+                <h3 id="current-room-title" style="font-size:15px;">Bir Sohbet Seçin</h3>
             </div>
             <div class="messages-box" id="messages-box"></div>
             <div class="chat-input-area">
@@ -243,7 +254,6 @@
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('collapsed');
-            document.getElementById('chat-area').classList.toggle('full-width');
         }
 
         function switchTab(tabName) {
@@ -287,7 +297,7 @@
             currentUserData.friends.forEach(friend => {
                 box.innerHTML += `
                     <div class="list-item" onclick="openDM('${friend}')">
-                        <span>${friend}</span>
+                        <span style="font-size:13px; word-break:break-all;">${friend}</span>
                         <div class="item-actions">
                             <button class="btn-sm btn-warning" onclick="event.stopPropagation(); removeFriend('${friend}')">Çıkar</button>
                             <button class="btn-sm btn-danger" onclick="event.stopPropagation(); blockUser('${friend}')">Engelle</button>
@@ -302,7 +312,7 @@
             currentUserData.groups.forEach(g => {
                 box.innerHTML += `
                     <div class="list-item" onclick="openGroup('${g.groupName}')">
-                        <span># ${g.groupName}</span>
+                        <span style="font-size:13px;"># ${g.groupName}</span>
                         <button class="btn-sm btn-danger" onclick="event.stopPropagation(); leaveGroup('${g.groupName}')">Çık</button>
                     </div>`;
             });
@@ -314,7 +324,7 @@
             currentUserData.friendRequests.forEach(req => {
                 box.innerHTML += `
                     <div class="list-item">
-                        <span>${req}</span>
+                        <span style="font-size:13px; word-break:break-all;">${req}</span>
                         <div class="item-actions">
                             <button class="btn-sm btn-success" onclick="acceptRequest('${req}')">Kabul Et</button>
                             <button class="btn-sm btn-danger" onclick="rejectRequest('${req}')">Reddet</button>
@@ -329,8 +339,8 @@
             currentUserData.blockedUsers.forEach(b => {
                 box.innerHTML += `
                     <div class="list-item">
-                        <span>${b}</span>
-                        <button class="btn-sm btn-success" onclick="unblockUser('${b}')">Engeli Kaldır</button>
+                        <span style="font-size:13px; word-break:break-all;">${b}</span>
+                        <button class="btn-sm btn-success" onclick="unblockUser('${b}')">Kaldır</button>
                     </div>`;
             });
         }
@@ -427,12 +437,14 @@
         function openDM(friendTag) {
             activeRoom = [currentUserFullTag, friendTag].sort().join('_');
             document.getElementById('current-room-title').innerText = friendTag;
+            if (window.innerWidth <= 768) toggleSidebar();
             socket.emit('join room', activeRoom);
         }
 
         function openGroup(groupName) {
             activeRoom = `group_${groupName}`;
             document.getElementById('current-room-title').innerText = `# ${groupName}`;
+            if (window.innerWidth <= 768) toggleSidebar();
             socket.emit('join room', activeRoom);
         }
 
