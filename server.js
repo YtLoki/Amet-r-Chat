@@ -12,9 +12,11 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // MongoDB Bağlantısı
-mongoose.connect('mongodb://localhost:27017/ametrchat')
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://HasanDemir:tOtzO1EFvesAwQl4@cluster0.yfvquev.mongodb.net/ametrchat?appName=Cluster0';
+
+mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Bağlandı'))
-    .catch(err => console.log(err));
+    .catch(err => console.log('DB Bağlantı Hatası:', err));
 
 // Mongoose Modelleri
 const userSchema = new mongoose.Schema({
