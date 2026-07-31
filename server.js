@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
 const path = require('path');
 
 const app = express();
@@ -10,372 +9,287 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.json());
-app.use(express.static(__dirname));
-
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public_index.html'));
-});
+app.use(express.static(path.join(__dirname, 'public')));
 
 // MongoDB Bağlantısı
-const MONGO_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/darkchat";
-mongoose.connect(MONGO_URI)
-    .then(() => console.log("MongoDB bağlantısı başarılı."))
-    .catch(err => console.error("MongoDB bağlantı hatası:", err));
+mongoose.connect('mongodb://localhost:27017/ametrchat', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => console.log('MongoDB Bağlandı')).catch(err => console.log(err));
 
-// Veritabanı Şemaları
+// Mongoose Modelleri
 const userSchema = new mongoose.Schema({
-    username: { type: String, required: true },
-    userTag: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
+    username: String,
+    userTag: String,
+    fullTag: { type: String, unique: true },
+    password: String,
     friends: [String],
     friendRequests: [String],
     blockedUsers: [String],
-    groups: [{ groupName: String, adminTag: String }]
+    groups: [{ groupName: String }]
 });
-const User = mongoose.model('User', userSchema);
 
 const messageSchema = new mongoose.Schema({
     room: String,
     sender: String,
-    content: String,
-    timestamp: { type: Date, default: Date.now }
+    text: String,
+    time: String
 });
+
+const User = mongoose.model('User', userSchema);
 const Message = mongoose.model('Message', messageSchema);
 
-// Yardımcı Fonksiyonlar
-async function generateUniqueTag() {
-    let tag, exists;
-    do {
-        const randomNum = Math.floor(1000 + Math.random() * 9000);
-        tag = `#${randomNum}`;
-        exists = await User.findOne({ userTag: tag });
-    } while (exists);
-    return tag;
+function generateTag() {
+    return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
-function parseTag(fullTag) {
-    if (!fullTag || !fullTag.includes('#')) return { username: fullTag, userTag: '' };
-    const parts = fullTag.split('#');
-    return { username: parts[0], userTag: '#' + parts[1] };
-}
-
-// API ENDPOINTS
-
+// --- API ENDPOINTS ---
 app.post('/api/register', async (req, res) => {
     try {
         const { username, password } = req.body;
-        if (!username || !password) return res.status(400).json({ error: "Tüm alanları doldurun." });
+        let userTag = generateTag();
+        let fullTag = `${username}#${userTag}`;
+        
+        while (await User.findOne({ fullTag })) {
+            userTag = generateTag();
+            fullTag = `${username}#${userTag}`;
+        }
 
-        const userTag = await generateUniqueTag();
-        const fullTag = `${username}${userTag}`;
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        const newUser = new User({
-            username,
-            userTag,
-            password: hashedPassword,
-            friends: [],
-            friendRequests: [],
-            blockedUsers: [],
-            groups: []
-        });
-
+        const newUser = new User({ username, userTag, fullTag, password });
         await newUser.save();
-        res.json({ success: true, fullTag, userTag });
+        res.json({ fullTag });
     } catch (err) {
-        res.status(500).json({ error: "Kayıt olunurken hata oluştu." });
+        res.status(400).json({ error: 'Kayıt olurken hata oluştu.' });
     }
 });
 
 app.post('/api/login', async (req, res) => {
     try {
         const { username, password } = req.body;
-        let user;
-
-        if (username.includes('#')) {
-            const { username: uName, userTag } = parseTag(username);
-            user = await User.findOne({ username: uName, userTag });
-        } else {
-            user = await User.findOne({ username });
+        let user = await User.findOne({ fullTag: username, password });
+        if (!user) {
+            user = await User.findOne({ username, password });
         }
-
-        if (!user || !(await bcrypt.compare(password, user.password))) {
-            return res.status(400).json({ error: "Geçersiz kullanıcı adı veya şifre." });
-        }
-
-        const fullTag = `${user.username}${user.userTag}`;
-        res.json({ success: true, fullTag, userTag: user.userTag });
+        if (!user) return res.status(400).json({ error: 'Geçersiz kullanıcı adı veya şifre.' });
+        res.json({ fullTag: user.fullTag });
     } catch (err) {
-        res.status(500).json({ error: "Giriş yapılırken hata oluştu." });
+        res.status(400).json({ error: 'Giriş yapılırken hata oluştu.' });
     }
 });
 
 app.post('/api/forgot-password', async (req, res) => {
     try {
         const { username, userTag, newPassword } = req.body;
-        const user = await User.findOne({ username, userTag });
-        if (!user) return res.status(404).json({ error: "Kullanıcı bulunamadı." });
-
-        user.password = await bcrypt.hash(newPassword, 10);
+        const fullTag = userTag.startsWith('#') ? `${username}${userTag}` : `${username}#${userTag}`;
+        const user = await User.findOne({ fullTag });
+        if (!user) return res.status(400).json({ error: 'Kullanıcı bulunamadı.' });
+        user.password = newPassword;
         await user.save();
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: "Şifre yenilenemedi." });
+        res.status(400).json({ error: 'İşlem başarısız.' });
     }
 });
 
 app.post('/api/get-user-data', async (req, res) => {
     try {
         const { fullTag } = req.body;
-        const { username, userTag } = parseTag(fullTag);
-
-        const user = await User.findOne({ username, userTag });
-        if (!user) return res.status(404).json({ error: "Kullanıcı bulunamadı." });
-
+        const user = await User.findOne({ fullTag });
+        if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
         res.json({
-            userTag: user.userTag,
-            friends: user.friends || [],
-            friendRequests: user.friendRequests || [],
-            blockedUsers: user.blockedUsers || [],
-            groups: user.groups || []
+            friends: user.friends,
+            friendRequests: user.friendRequests,
+            blockedUsers: user.blockedUsers,
+            groups: user.groups
         });
     } catch (err) {
-        res.status(500).json({ error: "Veriler alınamadı." });
+        res.status(400).json({ error: 'Veri alınamadı.' });
     }
 });
 
 app.post('/api/send-request', async (req, res) => {
     try {
         const { senderFullTag, targetInput } = req.body;
-        const targetUser = await User.findOne({ userTag: targetInput.trim() });
-
-        if (!targetUser) return res.status(404).json({ error: "Kullanıcı bulunamadı." });
-
-        const targetFullTag = `${targetUser.username}${targetUser.userTag}`;
-        if (senderFullTag === targetFullTag) return res.status(400).json({ error: "Kendine istek atamazsın." });
-
-        if (targetUser.blockedUsers.includes(senderFullTag)) {
-            return res.status(400).json({ error: "Bu kullanıcıya istek gönderemezsiniz." });
+        let targetUser = await User.findOne({ fullTag: targetInput });
+        if (!targetUser && !targetInput.includes('#')) {
+            targetUser = await User.findOne({ username: targetInput });
         }
-
-        if (targetUser.friendRequests.includes(senderFullTag)) return res.status(400).json({ error: "Zaten istek gönderilmiş." });
+        
+        if (!targetUser) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
+        if (targetUser.fullTag === senderFullTag) return res.status(400).json({ error: 'Kendine istek atamazsın.' });
+        if (targetUser.blockedUsers.includes(senderFullTag)) return res.status(400).json({ error: 'Bu kullanıcı tarafından engellenmişsiniz.' });
+        if (targetUser.friends.includes(senderFullTag)) return res.status(400).json({ error: 'Zaten arkadaşsınız.' });
+        if (targetUser.friendRequests.includes(senderFullTag)) return res.status(400).json({ error: 'Zaten istek gönderilmiş.' });
 
         targetUser.friendRequests.push(senderFullTag);
         await targetUser.save();
-
-        io.to(targetFullTag).emit('update_data');
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: "İstek gönderilemedi." });
+        res.status(400).json({ error: 'İstek gönderilemedi.' });
     }
 });
 
 app.post('/api/accept-request', async (req, res) => {
     try {
         const { userFullTag, requesterFullTag } = req.body;
-        const u = parseTag(userFullTag);
-        const r = parseTag(requesterFullTag);
+        const user = await User.findOne({ fullTag: userFullTag });
+        const requester = await User.findOne({ fullTag: requesterFullTag });
 
-        const user = await User.findOne({ username: u.username, userTag: u.userTag });
-        const requester = await User.findOne({ username: r.username, userTag: r.userTag });
+        if (!user || !requester) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
 
-        if (user && requester) {
-            user.friendRequests = user.friendRequests.filter(tag => tag !== requesterFullTag);
-            if (!user.friends.includes(requesterFullTag)) user.friends.push(requesterFullTag);
-            if (!requester.friends.includes(userFullTag)) requester.friends.push(userFullTag);
+        user.friendRequests = user.friendRequests.filter(f => f !== requesterFullTag);
+        if (!user.friends.includes(requesterFullTag)) user.friends.push(requesterFullTag);
+        if (!requester.friends.includes(userFullTag)) requester.friends.push(userFullTag);
 
-            await user.save();
-            await requester.save();
-
-            io.to(requesterFullTag).emit('update_data');
-            io.to(userFullTag).emit('update_data');
-        }
+        await user.save();
+        await requester.save();
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: "İstek kabul edilemedi." });
+        res.status(400).json({ error: 'İşlem başarısız.' });
     }
 });
 
 app.post('/api/reject-request', async (req, res) => {
     try {
         const { userFullTag, requesterFullTag } = req.body;
-        const u = parseTag(userFullTag);
-
-        const user = await User.findOne({ username: u.username, userTag: u.userTag });
-        if (user) {
-            user.friendRequests = user.friendRequests.filter(tag => tag !== requesterFullTag);
-            await user.save();
-            io.to(userFullTag).emit('update_data');
-        }
+        const user = await User.findOne({ fullTag: userFullTag });
+        if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
+        user.friendRequests = user.friendRequests.filter(f => f !== requesterFullTag);
+        await user.save();
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: "İstek reddedilemedi." });
+        res.status(400).json({ error: 'İşlem başarısız.' });
     }
 });
 
 app.post('/api/remove-friend', async (req, res) => {
     try {
         const { userFullTag, friendFullTag } = req.body;
-        const u = parseTag(userFullTag);
-        const f = parseTag(friendFullTag);
-
-        const user = await User.findOne({ username: u.username, userTag: u.userTag });
-        const friend = await User.findOne({ username: f.username, userTag: f.userTag });
+        const user = await User.findOne({ fullTag: userFullTag });
+        const friend = await User.findOne({ fullTag: friendFullTag });
 
         if (user) {
-            user.friends = user.friends.filter(tag => tag !== friendFullTag);
+            user.friends = user.friends.filter(f => f !== friendFullTag);
             await user.save();
-            io.to(userFullTag).emit('update_data');
         }
         if (friend) {
-            friend.friends = friend.friends.filter(tag => tag !== userFullTag);
+            friend.friends = friend.friends.filter(f => f !== userFullTag);
             await friend.save();
-            io.to(friendFullTag).emit('update_data');
         }
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: "Arkadaşlıktan çıkarılamadı." });
-    }
-});
-
-app.post('/api/create-group', async (req, res) => {
-    try {
-        const { groupName, creator, members } = req.body;
-        if (!groupName) return res.status(400).json({ error: "Grup adı gerekli." });
-
-        const allMembers = Array.from(new Set([creator, ...(members || [])]));
-
-        for (let memberTag of allMembers) {
-            const m = parseTag(memberTag);
-            const memberUser = await User.findOne({ username: m.username, userTag: m.userTag });
-            if (memberUser && !memberUser.groups.some(g => g.groupName === groupName)) {
-                memberUser.groups.push({ groupName, adminTag: creator });
-                await memberUser.save();
-                io.to(memberTag).emit('update_data');
-            }
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "Grup oluşturulamadı." });
-    }
-});
-
-app.post('/api/leave-group', async (req, res) => {
-    try {
-        const { fullTag, groupName } = req.body;
-        const u = parseTag(fullTag);
-        const user = await User.findOne({ username: u.username, userTag: u.userTag });
-
-        if (user) {
-            user.groups = user.groups.filter(g => g.groupName !== groupName);
-            await user.save();
-            io.to(fullTag).emit('update_data');
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "Gruptan çıkılamadı." });
+        res.status(400).json({ error: 'İşlem başarısız.' });
     }
 });
 
 app.post('/api/block-user', async (req, res) => {
     try {
         const { userFullTag, targetFullTag } = req.body;
-        const u = parseTag(userFullTag);
-        const user = await User.findOne({ username: u.username, userTag: u.userTag });
+        const user = await User.findOne({ fullTag: userFullTag });
+        const target = await User.findOne({ fullTag: targetFullTag });
 
-        if (user && !user.blockedUsers.includes(targetFullTag)) {
-            user.blockedUsers.push(targetFullTag);
+        if (user) {
             user.friends = user.friends.filter(f => f !== targetFullTag);
+            if (!user.blockedUsers.includes(targetFullTag)) user.blockedUsers.push(targetFullTag);
             await user.save();
-            io.to(userFullTag).emit('update_data');
+        }
+        if (target) {
+            target.friends = target.friends.filter(f => f !== userFullTag);
+            await target.save();
         }
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: "Kullanıcı engellenemedi." });
+        res.status(400).json({ error: 'İşlem başarısız.' });
     }
 });
 
 app.post('/api/unblock-user', async (req, res) => {
     try {
         const { userFullTag, targetFullTag } = req.body;
-        const u = parseTag(userFullTag);
-        const t = parseTag(targetFullTag);
-
-        const user = await User.findOne({ username: u.username, userTag: u.userTag });
-        const targetUser = await User.findOne({ username: t.username, userTag: t.userTag });
-
-        if (user) {
-            user.blockedUsers = user.blockedUsers.filter(b => b !== targetFullTag);
-            if (!user.friends.includes(targetFullTag)) {
-                user.friends.push(targetFullTag);
-            }
-            await user.save();
-            io.to(userFullTag).emit('update_data');
+        const user = await User.findOne({ fullTag: userFullTag });
+        if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
+        
+        user.blockedUsers = user.blockedUsers.filter(b => b !== targetFullTag);
+        if (!user.friends.includes(targetFullTag)) {
+            user.friends.push(targetFullTag);
         }
+        await user.save();
 
-        if (targetUser) {
-            if (!targetUser.friends.includes(userFullTag)) {
-                targetUser.friends.push(userFullTag);
-                await targetUser.save();
-            }
-            io.to(targetFullTag).emit('update_data');
+        const target = await User.findOne({ fullTag: targetFullTag });
+        if (target && !target.friends.includes(userFullTag)) {
+            target.friends.push(userFullTag);
+            await target.save();
         }
 
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: "Engel kaldırılamadı." });
+        res.status(400).json({ error: 'İşlem başarısız.' });
     }
 });
 
-// SOCKET.IO GERÇEK ZAMANLI SOHBET
-io.on('connection', (socket) => {
-    socket.on('register_user', (fullTag) => {
-        socket.join(fullTag);
-    });
+app.post('/api/create-group', async (req, res) => {
+    try {
+        const { groupName, creator, members } = req.body;
+        if (!groupName) return res.status(400).json({ error: 'Grup adı gereklidir.' });
 
+        const allMembers = [creator, ...members];
+        for (const mTag of allMembers) {
+            const u = await User.findOne({ fullTag: mTag });
+            if (u) {
+                if (!u.groups.some(g => g.groupName === groupName)) {
+                    u.groups.push({ groupName });
+                    await u.save();
+                }
+            }
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(400).json({ error: 'Grup kurulamadı.' });
+    }
+});
+
+app.post('/api/leave-group', async (req, res) => {
+    try {
+        const { fullTag, groupName } = req.body;
+        const user = await User.findOne({ fullTag });
+        if (user) {
+            user.groups = user.groups.filter(g => g.groupName !== groupName);
+            await user.save();
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(400).json({ error: 'Gruptan çıkılamadı.' });
+    }
+});
+
+// --- SOCKET.IO ---
+io.on('connection', (socket) => {
     socket.on('join room', async (room) => {
         socket.join(room);
         try {
-            const messages = await Message.find({ room }).sort({ timestamp: 1 }).limit(100);
-            const formattedMessages = messages.map(m => {
-                const date = new Date(m.timestamp);
-                const timeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
-                return {
-                    room: m.room,
-                    sender: m.sender,
-                    text: m.content,
-                    time: timeStr
-                };
-            });
-            socket.emit('load_room_messages', formattedMessages);
+            const messages = await Message.find({ room }).sort({ _id: 1 }).limit(100);
+            socket.emit('load_room_messages', messages);
         } catch (err) {
-            console.error(err);
+            console.log('Mesajlar yüklenemedi:', err);
         }
     });
 
     socket.on('chat message', async (data) => {
+        const { room, sender, text } = data;
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const messageData = { room, sender, text, time };
+
         try {
-            const newMessage = new Message({
-                room: data.room,
-                sender: data.sender,
-                content: data.text
-            });
+            const newMessage = new Message(messageData);
             await newMessage.save();
-
-            const date = new Date();
-            const timeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
-
-            io.to(data.room).emit('chat message', {
-                room: data.room,
-                sender: data.sender,
-                text: data.text,
-                time: timeStr
-            });
+            io.to(room).emit('chat message', messageData);
         } catch (err) {
-            console.error(err);
+            console.log('Mesaj kaydedilemedi:', err);
         }
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Sunucu ${PORT} üzerinde aktif.`));
+server.listen(PORT, () => {
+    console.log(`Sunucu ${PORT} portunda çalışıyor.`);
+});
