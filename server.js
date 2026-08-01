@@ -327,7 +327,13 @@ io.on('connection', (socket) => {
 
     socket.on('chat message', async (data) => {
         const { room, sender, text } = data;
-        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const time = new Intl.DateTimeFormat('tr-TR', {
+            timeZone: 'Europe/Istanbul',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        }).format(new Date());
+        
         const messageData = { room, sender, text, time };
 
         try {
@@ -344,3 +350,4 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Sunucu ${PORT} portunda çalışıyor.`);
 });
+```[cite: 8]
