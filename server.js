@@ -9,7 +9,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://HasanDemir:tOtzO1EFvesAwQl4@cluster0.yfvquev.mongodb.net/ametrchat?appName=Cluster0';
 
@@ -43,7 +43,7 @@ function generateTag() {
 }
 
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'public_index.html'));
 });
 
 app.post('/api/register', async (req, res) => {
