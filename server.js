@@ -11,14 +11,12 @@ const io = new Server(server);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// MongoDB Bağlantısı
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://HasanDemir:tOtzO1EFvesAwQl4@cluster0.yfvquev.mongodb.net/ametrchat?appName=Cluster0';
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Bağlandı'))
     .catch(err => console.log('DB Bağlantı Hatası:', err));
 
-// Mongoose Modelleri
 const userSchema = new mongoose.Schema({
     username: String,
     userTag: String,
@@ -44,9 +42,8 @@ function generateTag() {
     return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
-// --- API ENDPOINTS ---
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public_index.html'));
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.post('/api/register', async (req, res) => {
@@ -71,14 +68,16 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
     try {
-        const username = req.body.username ? req.body.username.trim() : '';
+        const input = req.body.username ? req.body.username.trim() : '';
         const password = req.body.password;
         
-        let user = await User.findOne({ fullTag: new RegExp(`^${username}$`, 'i'), password });
-        if (!user) {
-            user = await User.findOne({ username: new RegExp(`^${username}$`, 'i'), password });
+        let user;
+        if (input.includes('#')) {
+            user = await User.findOne({ fullTag: new RegExp(`^${input}$`, 'i'), password });
+        } else {
+            user = await User.findOne({ username: new RegExp(`^${input}$`, 'i'), password });
         }
-        if (!user) return res.status(400).json({ error: 'Geçersiz kullanıcı adı veya şifre.' });
+        if (!user) return res.status(400).json({ error: 'Geçersiz kullanıcı adı/tag veya şifre.' });
         res.json({ fullTag: user.fullTag });
     } catch (err) {
         res.status(400).json({ error: 'Giriş yapılırken hata oluştu.' });
@@ -122,12 +121,12 @@ app.post('/api/send-request', async (req, res) => {
     try {
         const senderFullTag = req.body.senderFullTag ? req.body.senderFullTag.trim() : '';
         const targetInput = req.body.targetInput ? req.body.targetInput.trim() : '';
-        if (!targetInput) return res.status(400).json({ error: 'Geçersiz giriş.' });
         
-        let targetUser = await User.findOne({ fullTag: new RegExp(`^${targetInput}$`, 'i') });
-        if (!targetUser && !targetInput.includes('#')) {
-            targetUser = await User.findOne({ username: new RegExp(`^${targetInput}$`, 'i') });
+        if (!targetInput.includes('#')) {
+            return res.status(400).json({ error: 'Aynı isimde birden fazla kullanıcı olabilir, lütfen tam tag (Örn: İsim#1234) girin.' });
         }
+        
+        const targetUser = await User.findOne({ fullTag: new RegExp(`^${targetInput}$`, 'i') });
         
         if (!targetUser) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
         if (targetUser.fullTag === senderFullTag) return res.status(400).json({ error: 'Kendine istek atamazsın.' });
@@ -137,6 +136,8 @@ app.post('/api/send-request', async (req, res) => {
 
         targetUser.friendRequests.push(senderFullTag);
         await targetUser.save();
+
+        io.to(targetUser.fullTag).emit('update_data');
         res.json({ success: true });
     } catch (err) {
         res.status(400).json({ error: 'İstek gönderilemedi.' });
@@ -159,6 +160,8 @@ app.post('/api/accept-request', async (req, res) => {
 
         await user.save();
         await requester.save();
+
+        io.to(requesterFullTag).emit('update_data');
         res.json({ success: true });
     } catch (err) {
         res.status(400).json({ error: 'İşlem başarısız.' });
@@ -174,6 +177,8 @@ app.post('/api/reject-request', async (req, res) => {
         if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
         user.friendRequests = user.friendRequests.filter(f => f !== requesterFullTag);
         await user.save();
+
+        io.to(requesterFullTag).emit('update_data');
         res.json({ success: true });
     } catch (err) {
         res.status(400).json({ error: 'İşlem başarısız.' });
@@ -196,6 +201,8 @@ app.post('/api/remove-friend', async (req, res) => {
             friend.friends = friend.friends.filter(f => f !== userFullTag);
             await friend.save();
         }
+
+        io.to(friendFullTag).emit('update_data');
         res.json({ success: true });
     } catch (err) {
         res.status(400).json({ error: 'İşlem başarısız.' });
@@ -219,6 +226,8 @@ app.post('/api/block-user', async (req, res) => {
             target.friends = target.friends.filter(f => f !== userFullTag);
             await target.save();
         }
+
+        io.to(targetFullTag).emit('update_data');
         res.json({ success: true });
     } catch (err) {
         res.status(400).json({ error: 'İşlem başarısız.' });
@@ -245,6 +254,7 @@ app.post('/api/unblock-user', async (req, res) => {
             await target.save();
         }
 
+        io.to(targetFullTag).emit('update_data');
         res.json({ success: true });
     } catch (err) {
         res.status(400).json({ error: 'İşlem başarısız.' });
@@ -265,6 +275,7 @@ app.post('/api/create-group', async (req, res) => {
                 if (!u.groups.some(g => g.groupName === groupName)) {
                     u.groups.push({ groupName });
                     await u.save();
+                    io.to(u.fullTag).emit('update_data');
                 }
             }
         }
@@ -289,8 +300,13 @@ app.post('/api/leave-group', async (req, res) => {
     }
 });
 
-// --- SOCKET.IO ---
 io.on('connection', (socket) => {
+    socket.on('register_user', (fullTag) => {
+        if (fullTag) {
+            socket.join(fullTag.trim());
+        }
+    });
+
     socket.on('join room', async (room) => {
         socket.join(room);
         try {
