@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
 const path = require('path');
 
 const app = express();
@@ -58,7 +59,8 @@ app.post('/api/register', async (req, res) => {
             fullTag = `${username}#${userTag}`;
         }
 
-        const newUser = new User({ username, userTag, fullTag, password });
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = new User({ username, userTag, fullTag, password: hashedPassword });
         await newUser.save();
         res.json({ fullTag });
     } catch (err) {
@@ -73,11 +75,16 @@ app.post('/api/login', async (req, res) => {
         
         let user;
         if (input.includes('#')) {
-            user = await User.findOne({ fullTag: new RegExp(`^${input}$`, 'i'), password });
+            user = await User.findOne({ fullTag: new RegExp(`^${input}$`, 'i') });
         } else {
-            user = await User.findOne({ username: new RegExp(`^${input}$`, 'i'), password });
+            user = await User.findOne({ username: new RegExp(`^${input}$`, 'i') });
         }
+
         if (!user) return res.status(400).json({ error: 'Geçersiz kullanıcı adı/tag veya şifre.' });
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(400).json({ error: 'Geçersiz kullanıcı adı/tag veya şifre.' });
+
         res.json({ fullTag: user.fullTag });
     } catch (err) {
         res.status(400).json({ error: 'Giriş yapılırken hata oluştu.' });
@@ -93,7 +100,8 @@ app.post('/api/forgot-password', async (req, res) => {
         
         const user = await User.findOne({ fullTag: new RegExp(`^${fullTag}$`, 'i') });
         if (!user) return res.status(400).json({ error: 'Kullanıcı bulunamadı.' });
-        user.password = newPassword;
+        
+        user.password = await bcrypt.hash(newPassword, 10);
         await user.save();
         res.json({ success: true });
     } catch (err) {

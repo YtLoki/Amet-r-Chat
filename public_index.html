@@ -66,7 +66,6 @@
         .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 100; padding: 15px; }
         .modal-content { background: #151922; padding: 20px; border-radius: 8px; width: 100%; max-width: 320px; border: 1px solid #232936; }
 
-        /* Mobile Specific Overrides */
         @media (max-width: 768px) {
             .sidebar {
                 position: fixed; inset: 0; width: 100%; height: 100dvh; z-index: 50;
@@ -95,7 +94,7 @@
             <a onclick="showForgotPassword()">Şifremi Unuttum</a>
         </div>
 
-        <button class="btn" onclick="handleAuth()">Giriş Yap</button>
+        <button class="btn" id="auth-btn" onclick="handleAuth()">Giriş Yap</button>
         <div style="text-align: center; margin-top: 15px; font-size: 13px;">
             <a onclick="toggleAuthMode()" id="auth-switch" style="color:#5865f2; cursor:pointer;">Hesabın yok mu? Kayıt Ol</a>
         </div>
@@ -185,10 +184,17 @@
         let unreadGroupMessages = 0;
 
         window.onload = () => {
-            const remembered = localStorage.getItem('remembered_user');
-            if (remembered) {
-                document.getElementById('auth-username').value = remembered;
-                document.getElementById('remember-me').checked = true;
+            const rememberedTag = localStorage.getItem('remembered_fullTag');
+            if (rememberedTag) {
+                currentUserFullTag = rememberedTag;
+                document.getElementById('user-display-tag').innerText = currentUserFullTag;
+                document.getElementById('auth-view').style.display = 'none';
+                document.getElementById('app-view').style.display = 'flex';
+                if (window.innerWidth <= 768) {
+                    document.getElementById('sidebar').classList.remove('collapsed');
+                }
+                socket.emit('register_user', currentUserFullTag);
+                loadUserData();
             }
         };
 
@@ -206,6 +212,7 @@
         function toggleAuthMode() {
             isLoginMode = !isLoginMode;
             document.getElementById('auth-title').innerText = isLoginMode ? 'Giriş Yap' : 'Kayıt Ol';
+            document.getElementById('auth-btn').innerText = isLoginMode ? 'Giriş Yap' : 'Kayıt Ol';
             document.getElementById('auth-switch').innerText = isLoginMode ? 'Hesabın yok mu? Kayıt Ol' : 'Zaten hesabın var mı? Giriş Yap';
         }
 
@@ -229,8 +236,11 @@
             currentUserFullTag = data.fullTag;
             document.getElementById('user-display-tag').innerText = currentUserFullTag;
 
-            if (remember) localStorage.setItem('remembered_user', username);
-            else localStorage.removeItem('remembered_user');
+            if (remember) {
+                localStorage.setItem('remembered_fullTag', currentUserFullTag);
+            } else {
+                localStorage.removeItem('remembered_fullTag');
+            }
 
             document.getElementById('auth-view').style.display = 'none';
             document.getElementById('app-view').style.display = 'flex';
