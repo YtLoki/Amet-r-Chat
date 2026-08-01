@@ -12,7 +12,7 @@ const io = new Server(server);
 app.use(express.json());
 app.use(express.static(__dirname));
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://HasanDemir:tOtzO1EFvesAwQl4@cluster0.yfvquev.mongodb.net/ametrchat?appName=Cluster0';
+const MONGO_URI = 'mongodb+srv://aspecthjl_db_user:Hasan2323@cluster0.j2x6h70.mongodb.net/ametrchat?appName=Cluster0';
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Bağlandı'))
