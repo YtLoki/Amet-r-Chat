@@ -8,9 +8,17 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// EXE veya Normal Çalışma Dizin Ayarı
+const basePath = process.pkg ? path.dirname(process.execPath) : __dirname;
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(basePath));
+
+// Kök dizin için yönlendirme (Cannot GET / hatasını önler)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(basePath, 'index.html'));
+});
 
 const MONGO_URI = 'mongodb+srv://aspecthjl_db_user:Hasan2323@cluster0.j2x6h70.mongodb.net/ametrchat?appName=Cluster0';
 
@@ -98,9 +106,13 @@ app.post('/api/get-user-data', async (req, res) => {
 app.post('/api/send-request', async (req, res) => {
     try {
         const { senderFullTag, targetInput } = req.body;
-        let targetFullTag = targetInput.startsWith('#') ? targetInput : `#${targetInput}`;
         
-        const targetUser = await User.findOne({ fullTag: new RegExp(targetInput + '$', 'i') });
+        // Kullanıcı ister tam tag (kullanici#1234) ister sadece tag girsin diye düzeltildi
+        let targetUser = await User.findOne({ fullTag: targetInput });
+        if (!targetUser) {
+            targetUser = await User.findOne({ fullTag: new RegExp(targetInput + '$', 'i') });
+        }
+
         if (!targetUser) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
         if (targetUser.fullTag === senderFullTag) return res.status(400).json({ error: 'Kendine istek atamazsın' });
 
