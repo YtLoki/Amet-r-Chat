@@ -23,7 +23,7 @@ app.get('/', (req, res) => {
 const MONGO_URI = 'mongodb+srv://aspecthjl_db_user:Hasan2323@cluster0.j2x6h70.mongodb.net/ametrchat?appName=Cluster0';
 
 mongoose.connect(MONGO_URI)
-    .then(() => console.log('MongoDB bağlandı!'))
+    .then(() => console.log('TurkChat MongoDB bağlandı!'))
     .catch(err => console.log('Bağlantı hatası:', err));
 
 // Kullanıcı Şeması
@@ -107,7 +107,6 @@ app.post('/api/send-request', async (req, res) => {
     try {
         const { senderFullTag, targetInput } = req.body;
         
-        // Kullanıcı ister tam tag (kullanici#1234) ister sadece tag girsin diye düzeltildi
         let targetUser = await User.findOne({ fullTag: targetInput });
         if (!targetUser) {
             targetUser = await User.findOne({ fullTag: new RegExp(targetInput + '$', 'i') });
@@ -269,5 +268,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(3000, () => {
-    console.log('Sunucu 3000 portunda çalışıyor.');
+    console.log('TurkChat sunucusu 3000 portunda çalışıyor.');
 });
