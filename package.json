@@ -1,14 +1,14 @@
 {
-  "name": "amet-r-chat",
+  "name": "TurkChat",
   "version": "1.0.0",
-  "description": "Amet-r-Chat Backend and Web Client",
+  "description": "TurkChat Backend and Web Client",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/YtLoki/Amet-r-Chat.git"
+    "url": "https://github.com/YtLoki/TurkChat"
   },
   "author": "Hasan",
   "license": "ISC",
